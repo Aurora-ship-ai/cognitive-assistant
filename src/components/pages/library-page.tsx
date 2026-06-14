@@ -21,6 +21,7 @@ import {
   ArrowLeft,
 } from "lucide-react";
 import { AudioRecorder } from "@/components/capture/audio-recorder";
+import { structureDocument } from "@/lib/ai/client";
 
 const sourceTypeIcons: Record<string, React.ComponentType<{ size?: number; className?: string }>> = {
   recording: Mic,
@@ -45,10 +46,7 @@ const digestionLabels: Record<string, string> = {
   metabolized: "已代谢",
 };
 
-function getApiKey(): string | null {
-  if (typeof window === "undefined") return null;
-  return localStorage.getItem("ai_key_deepseek") || null;
-}
+// API key handled by client.ts
 
 export function LibraryPage() {
   const { isAuthenticated, userId } = useAuthStore();
@@ -86,25 +84,11 @@ export function LibraryPage() {
   // AI structure the manual input
   const handleAIStructure = async () => {
     if (!newContent.trim()) return;
-    const apiKey = getApiKey();
-    if (!apiKey) {
-      setStructError("请先在「设置」页面填入 AI 密钥");
-      return;
-    }
     setIsStructuring(true);
     setStructError(null);
     try {
-      const response = await fetch("/api/structure-document", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-key": apiKey,
-        },
-        body: JSON.stringify({ text: newContent }),
-      });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error);
-      setNewContent(data.contentMarkdown);
+      const result = await structureDocument(newContent);
+        setNewContent(result);
     } catch (err) {
       setStructError(err instanceof Error ? err.message : "AI 整理失败");
     } finally {
@@ -114,7 +98,6 @@ export function LibraryPage() {
 
   // Save new document
   const handleSaveDocument = () => {
-    if (!newTitle.trim() || !newContent.trim()) return;
     const doc: Document = {
       id: generateId(),
       userId: userId ?? "",
@@ -212,29 +195,14 @@ export function LibraryPage() {
 
   // AI Textbook generation
   const handleTextbookGen = async () => {
-    if (!topic.trim() || isStructuring) return;
-    const apiKey = getApiKey();
-    if (!apiKey) {
-      setStructError("请先在「设置」页面填入 AI 密钥");
-      return;
-    }
+    if (!topic.trim()) return;
     setIsStructuring(true);
     setStructError(null);
     try {
-      const response = await fetch("/api/structure-document", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-key": apiKey,
-        },
-        body: JSON.stringify({
-          text: `请为以下主题生成一份对标${difficulty === "high_school" ? "高中" : difficulty === "undergraduate" ? "大学本科" : "研究生"}水平的教材级文档。深度：${depth === "overview" ? "概述" : depth === "standard" ? "标准" : "深入"}。\n\n主题：${topic}`,
-        }),
-      });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error);
-      setNewTitle(topic.trim());
-      setNewContent(data.contentMarkdown);
+      const prompt = `请为以下主题生成教材文档。
+主题：${topic}`;
+        const result = await structureDocument(prompt);
+        setNewTitle(topic.trim()); setNewContent(result);
       setShowTextbookGen(false);
       setShowNewDoc(true);
     } catch (err) {

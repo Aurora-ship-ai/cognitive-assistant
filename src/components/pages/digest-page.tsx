@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useDocumentStore } from "@/lib/store/documents";
 import { useKnowledgeTreeStore, type CognitivePatchData } from "@/lib/store/knowledge-tree";
 import { useAuthStore } from "@/lib/store/auth";
+import { detectGaps, generateUnderstandingReport, generateScrutinyReport } from "@/lib/ai/client";
 import { Button } from "@/components/ui/button";
 import {
   Brain,
@@ -20,10 +21,7 @@ import {
 
 type ReportType = "understanding" | "scrutiny";
 
-function getApiKey(): string | null {
-  if (typeof window === "undefined") return null;
-  return localStorage.getItem("ai_key_deepseek") || null;
-}
+// API key handling is now in @/lib/ai/client.ts
 
 export function DigestPage() {
   const { isAuthenticated } = useAuthStore();
@@ -48,30 +46,12 @@ export function DigestPage() {
   // Detect knowledge gaps
   const handleDetectGaps = async () => {
     if (nodes.length === 0) return;
-    const apiKey = getApiKey();
-    if (!apiKey) {
-      setGapError("请先在设置页填入 AI 密钥");
-      return;
-    }
-
     setIsDetectingGaps(true);
     setGapError(null);
-
     try {
-      const response = await fetch("/api/knowledge/detect-gaps", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-key": apiKey,
-        },
-        body: JSON.stringify({ nodes, edges }),
-      });
-
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || "检测失败");
-
-      // Convert gaps to patches
-      const newPatches: CognitivePatchData[] = (data.gaps || []).map((gap: any) => ({
+      const gaps = await detectGaps(nodes, edges);
+      if (gaps.length === 0) { setGapError("未发现明显的知识缺口，你的知识树很完整！"); setIsDetectingGaps(false); return; }
+      const newPatches: CognitivePatchData[] = gaps.map((gap: any) => ({
         id: crypto.randomUUID(),
         userId: "",
         title: gap.title || "知识缺口",
@@ -147,38 +127,20 @@ export function DigestPage() {
   // Generate deep report
   const handleGenerateReport = async () => {
     if (!selectedDocId || isGenerating) return;
-    const apiKey = getApiKey();
-    if (!apiKey) {
-      setGenerationError("请先在设置页填入 AI 密钥");
-      return;
-    }
-
     setIsGenerating(true);
     setGenerationError(null);
     setReport(null);
 
     try {
-      // Find the document or node content
       const doc = documents.find((d) => d.id === selectedDocId);
       const node = nodes.find((n) => n.id === selectedDocId);
       const content = doc?.contentMarkdown || "";
       const title = doc?.title || node?.title || "";
 
-      const endpoint =
-        reportType === "understanding" ? "/api/digest/understanding" : "/api/digest/scrutiny";
-
-      const response = await fetch(endpoint, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-key": apiKey,
-        },
-        body: JSON.stringify({ documentContent: content, documentTitle: title }),
-      });
-
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error);
-      setReport(data.content);
+      const result = reportType === "understanding"
+        ? await generateUnderstandingReport(title, content)
+        : await generateScrutinyReport(title, content);
+      setReport(result);
     } catch (err) {
       setGenerationError(err instanceof Error ? err.message : "生成报告时出错");
     } finally {

@@ -9,14 +9,10 @@ import {
   PenLine, Link, Video, FileText, Upload, Sparkles, Loader2,
   Copy, Check, Trash2, BookOpen, ExternalLink, Type, FileUp,
 } from "lucide-react";
+import { explainCapturedText } from "@/lib/ai/client";
 import { generateId, formatRelativeTime } from "@/lib/utils";
 
 type InputMode = "text" | "link" | "file";
-
-function getApiKey(): string | null {
-  if (typeof window === "undefined") return null;
-  return localStorage.getItem("ai_key_deepseek") || null;
-}
 
 export function CapturePage() {
   const { isAuthenticated, userId } = useAuthStore();
@@ -88,12 +84,6 @@ export function CapturePage() {
 
     if (!content && !url) return;
 
-    const apiKey = getApiKey();
-    if (!apiKey) {
-      setError("请先在设置页填入 DeepSeek API 密钥");
-      return;
-    }
-
     setIsProcessing(true);
     setError(null);
     setResult(null);
@@ -110,15 +100,8 @@ export function CapturePage() {
         promptText = `以下是从文件「${fileName}」中提取的内容，请整理为结构化文档：\n\n${content}`;
       }
 
-      const response = await fetch("/api/capture", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "x-api-key": apiKey },
-        body: JSON.stringify({ text: promptText }),
-      });
-
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || "处理失败");
-      setResult(data);
+      const data = await explainCapturedText(promptText);
+	      setResult(data);
 
       // Save as document
       const title = mode === "link" ? (linkUrl.slice(0, 50) || "链接捕获") :

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { useKnowledgeTreeStore, type KnowledgeNode, type KnowledgeEdge } from "@/lib/store/knowledge-tree";
 import { useDocumentStore } from "@/lib/store/documents";
+import { extractGraph } from "@/lib/ai/client";
 import { Sparkles, Loader2, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -92,20 +93,7 @@ export function GraphCanvas() {
         .map((d) => `# ${d.title}\n\n${d.contentMarkdown}`)
         .join("\n\n---\n\n");
 
-      const response = await fetch("/api/knowledge/extract-graph", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-key": apiKey,
-        },
-        body: JSON.stringify({
-          documentContent: allContent.slice(0, 15000),
-          documentId: documents[0]?.id,
-        }),
-      });
-
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || "提取失败");
+      const data = await extractGraph(allContent.slice(0, 15000));
 
       // Convert extracted nodes/edges to store format
       const newNodes: KnowledgeNode[] = (data.nodes || []).map((n: any) => ({
@@ -115,7 +103,7 @@ export function GraphCanvas() {
         description: n.description || "",
         category: n.category || "未分类",
         lightStatus: "lit" as const,
-        sourceDocumentIds: data.documentId ? [data.documentId] : [],
+        sourceDocumentIds: [],
         isManual: false,
         metadata: {},
         createdAt: new Date().toISOString(),
@@ -134,7 +122,7 @@ export function GraphCanvas() {
           relationshipType: e.relationship || "related_to",
           label: e.label || "",
           lightStatus: "lit" as const,
-          sourceDocumentId: data.documentId,
+          sourceDocumentId: undefined,
           isWeak: false,
           createdAt: new Date().toISOString(),
         }));
